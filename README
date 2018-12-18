@@ -1,0 +1,24 @@
+#################
+# INTRO
+#################
+
+This is a minimal Finite Volumes solver for the 1D1V collisionless 
+gaskinetic theory.
+External forcing is provided through a file, as well as a chemical 
+source term.
+
+Uses OpenMP for parallelization.
+
+First or second order in space (see Mieussens, Discrete Velocity Model
+and Implicit Scheme for the BGK Equation of Rarefied Gas Dynamics).
+First order explicit in time.
+
+The solution is written in the "output" directory every "EACH" 
+timesteps, where "EACH" is defined in the source.
+
+#################
+# COMPILING
+#################
+
+g++ -O3 -fopenmp fvkin.cpp -o fvkin
+
