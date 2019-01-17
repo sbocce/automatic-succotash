@@ -43,6 +43,7 @@ v_u    = [];
 v_P    = [];
 v_Pxx  = [];
 v_Prr  = [];
+v_Qxxx = [];
 
 x_vec = XX(:,1);
 v_vec = VV(1,:);
@@ -73,6 +74,9 @@ for(i = 1:Nx)
 
   P = (P_xx + P_rr + P_tt)/3.0;
 
+  % Heat flux tensor
+  Q_xxx = m/2*trapz(v_vec, c_x.*c_x.*c_x.*f_vec) * intExpTr * intExpTt;
+
   % Save everything into vectors
   v_n(i)    = n;
   v_rho(i)  = rho;
@@ -81,6 +85,7 @@ for(i = 1:Nx)
   v_P(i)    = P;
   v_Pxx(i)  = P_xx;
   v_Prr(i)  = P_rr;
+  v_Qxxx(i) = Q_xxx;
 
 end
 
@@ -98,6 +103,12 @@ ylabel('Velocity [m/s]')
 subplot(3,1,3)
 plot(x_vec', v_P, 'b', 'linewidth', 2)
 ylabel('Pressure [Pa]')
+
+% Plot heat flux vector
+figure
+plot(x_vec', v_Qxxx, 'b', 'linewidth', 2)
+ylabel('Heat flux tensor Qxxx [?]')
+xlabel('position [m]')
 
 % Plot pressure tensor
 figure
