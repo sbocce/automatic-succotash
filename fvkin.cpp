@@ -379,7 +379,7 @@ int main()
                                     - dt/dx*(Fx_plus - Fx_minus)
                                     - dt/dv*(Fv_plus - Fv_minus)
                                     + dt/dv*Snow 
-                                    + dt/dv*BGK_Src; 
+                                    + dt*BGK_Src; 
       }
     }
 
