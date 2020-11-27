@@ -11,12 +11,12 @@ Nx = 100;
 Nv = 100;
 
 figure
-for kk = 0:4:120
+for kk = 0:1:29
 %for kk = 0:2
 
   fprintf('Step %d\n', kk);
 
-  filename = sprintf('../output/file_%08d.dat', kk);
+  filename = sprintf('../output/VDF_%08d.dat', kk);
   dd = load(filename);
   
   xx = dd(:,1);
@@ -46,9 +46,14 @@ for kk = 0:4:120
 end
 
 % PLOT VDF LINE BY LINE
+stepp = 5;
 figure
-plot3(VV', XX', FF','k')
+plot3(VV(1:stepp:end,:)', XX(1:stepp:end,:)', FF(1:stepp:end,:)','k', 'linewidth',2)
 xlabel('v [m/s]')
 ylabel('x [m]')
 zlabel('f [s^3/m^6]')
-view(140,40)
+%view(140,40)
+view([150,35])
+pbaspect([1,5,1])
+ylim([-1e-10,1.5e-10])
+xlim([-1000,1500])

@@ -36,18 +36,28 @@
 #include <math.h>       /* round, floor, ceil, trunc */
 #include <algorithm>    // std::min
 
+#define kB 1.3806485e-23 // [J/K] - Boltzmann constant
+#define PI 3.14159265359
+
 using namespace std;
 
 // Prototypes for functions called in MAIN
-void   initVDF(const string s_VDFtype, vector< vector<double> > &f);
+void   initVDF(const string s_VDFtype, vector< vector<double> > &f, vector<double> v_xcen, vector<double> v_vcen, double m_part);
 
 void   writeSol(const char* filename,vector<double> &x,vector<double> &v,vector< vector<double> > *p_ff);
+
+void   writeMoments(const char* filename, double tNow, vector<double> &x, vector<double> &v, vector< vector<double> > f, double m_part);
 
 double limiterFun(double r);
 
 double minmodFun(double v1, double v2, double v3);
 
 void   loadValuesFromFile(const char* filename, const vector<double> &v_xcen, vector<double> &val);
+
+void   compute_VDF_moments(vector<double> &f, vector<double> v_vcen, double m_part, vector<double> &mom_vec_prim);
+
+double maxwellian_1V(double v, double n, double u, double T, double m_part);
+
 
 // ------------------------------------------------
 
@@ -57,29 +67,37 @@ int main()
   // ## SIMULATION PARAMETERS
   //
   // ---  Space and time discretizations
-  double dt = 1.0e-9;
-  size_t Nt = 10000;
+  double dt = 1.0e-17;
+  size_t Nt = 15000;
 
-  double xmin = -0.0;
-  double xmax = 0.04;
-  size_t Nx = 100;
+  double xmin = -2.0e-10;
+  double xmax = 2.0e-10;
+  size_t Nx = 500;
 
-  double vmin = -1000;
-  double vmax = 20000;
-  size_t Nv = 100;
+  double vmin = -2000;
+  double vmax = 3000;
+  size_t Nv = 500;
   
   // --- Numerics
   string reconstruction = "mieussens"; // "none" - "linear" - "mieussens"
 
   // --- Physical quantities and thruster parameters
-  double m_part = 21.8e-26;  // [kg] - Xe+ mass of the particle 
-  double q_part = 1.602e-19; // [C]  - Xe+ charge 
-  double vIoniz = 300.0;     // [m/s] - velocity of particles created by ionization
+  // double m_part = 21.8e-26;       // [kg]  - Xe+ mass of the particle 
+  double m_part = 6.67e-26;       // [kg]  - Ar mass of the particle 
+  double q_part = 0.0;            // [C]   - particle charge
+  double vIoniz = 300.0;          // [m/s] - velocity of particles created by ionization
+  double sigma_HS = 5.463e-19;    // [m2]  - hard-sphere cross section for argon-argon collisions
 
-  string s_VDF_type_init = "zero"; // "zero" or "block"
+  string s_VDF_type_init = "Riemann"; // "zero" or "block" or "Riemann"
 
   // --- Solution writing 
   size_t writeeach = 500;
+
+  // --- Enable/disable source terms
+  bool electric_field_bool    = 0;
+  bool ionization_source_bool = 0;
+  bool BGK_collisions_bool    = 1;
+
   // ##################################
 
   // ###################################
@@ -117,7 +135,8 @@ int main()
   vector< vector<double> > ff_1(Nx, vector<double>(Nv, 0.)); // Solution 
   vector< vector<double> > ff_2(Nx, vector<double>(Nv, 0.)); // 
 
-  initVDF(s_VDF_type_init, ff_1); // init according to model
+  initVDF(s_VDF_type_init, ff_1, v_xcen, v_vcen, m_part); // init according to model
+  initVDF(s_VDF_type_init, ff_2, v_xcen, v_vcen, m_part); // init according to model
 
   vector< vector<double> > *p_ff    = &ff_1; // points to current solution
   vector< vector<double> > *p_ffNew = &ff_2; // points to updated solution
@@ -125,24 +144,38 @@ int main()
   // --- Initialize additional fields
 
   vector<double> E_ext(Nx, 0.); // external electric field
-  loadValuesFromFile("data/Edata.dat",v_xcen,E_ext);
   vector<double> v_a(Nx, 0.); // acceleration due to external electric field
-  for(size_t i = 0; i < Nx; ++i) 
-    v_a[i] = q_part*E_ext[i]/m_part;
+
+  if (electric_field_bool) {
+    loadValuesFromFile("data/Edata.dat",v_xcen,E_ext);
+
+    for(size_t i = 0; i < Nx; ++i) {
+      v_a[i] = q_part*E_ext[i]/m_part;
+    }
+  }
 
   // --- Ionization source, happens at the velocity of neutrals
   vector<double> SS(Nx, 0.); // source terms
-  loadValuesFromFile("data/Sdata.dat",v_xcen,SS);
-  double DeltaVioniz = vIoniz - vmin;
-  int ionizPosVel = floor(DeltaVioniz/dv);
-  if(ionizPosVel < 0) 
-    cerr << "Attention! Ionization source out of velocity domain!" << endl;
+  int ionizPosVel;
+
+  if (ionization_source_bool) {
+    loadValuesFromFile("data/Sdata.dat",v_xcen,SS);
+
+    double DeltaVioniz = vIoniz - vmin;
+    ionizPosVel = floor(DeltaVioniz/dv);
+
+    if(ionizPosVel < 0) {
+      cerr << "Attention! Ionization source out of velocity domain!" << endl;
+    }
+  }
 
   // ============================
   // ===== TIME INTEGRATION =====
   // ============================
   size_t count         = 0;
   size_t filenamecount = 0;
+
+  vector<double> mom_vec_prim(5, 0.0);
 
   for(size_t t_id = 0; t_id < Nt; ++t_id) {
 
@@ -152,6 +185,16 @@ int main()
     for(size_t i = 1; i < Nx-1; ++i) { // BOUNDARIEEEESSSSSSS EXCLUDEEEDDD
 
       double a = v_a[i]; // local acceleration (external forces)
+
+      double ni, ui, Ti, nu_BGK;
+      if (BGK_collisions_bool) {
+        compute_VDF_moments(ff_1.at(i), v_vcen, m_part, mom_vec_prim);
+        ni = mom_vec_prim[0];
+        ui = mom_vec_prim[1];
+        Ti = mom_vec_prim[2]/(ni*kB); // T = P/(n*kB)
+
+        nu_BGK = ni*sqrt(8.0/PI)*sqrt(kB*Ti/m_part)*sigma_HS;
+      }
 
       for(size_t j = 1; j < Nv-1; ++j) {
 
@@ -317,16 +360,26 @@ int main()
         }
 
         // Compute ionization source
-        double Snow;
-        if(j == ionizPosVel) 
-        { Snow = SS[i]; }
-        else
-        { Snow = 0.0; }
+        double Snow = 0.0;
+        if (ionization_source_bool) {
+          if(j == ionizPosVel) {
+            Snow = SS[i]; 
+          }
+        }
+
+        // Compute BGK collisions
+        double BGK_Src = 0.0;
+        if (BGK_collisions_bool) {
+          double Mnow = maxwellian_1V(v, ni, ui, Ti, m_part); // local maxwellian
+          BGK_Src = (Mnow - p_ff->operator[](i)[j])*nu_BGK;
+        } 
 
         // Write solution in new pointer)
-        p_ffNew->operator[](i)[j] = p_ff->operator[](i)[j] - dt/dx*(Fx_plus - Fx_minus)
-                                          - dt/dv*(Fv_plus - Fv_minus)
-                                          + dt/dv*Snow; 
+        p_ffNew->operator[](i)[j] = p_ff->operator[](i)[j] 
+                                    - dt/dx*(Fx_plus - Fx_minus)
+                                    - dt/dv*(Fv_plus - Fv_minus)
+                                    + dt/dv*Snow 
+                                    + dt/dv*BGK_Src; 
       }
     }
 
@@ -335,10 +388,14 @@ int main()
     if(count >= writeeach) { 
       // Create filename
       char filenamestr[512];
-      int n = sprintf(filenamestr, "./output/file_%08d.dat", filenamecount);
+      char filenamestr_mom[512];
+
+      int n  = sprintf(filenamestr,     "./output/VDF_%08d.dat", filenamecount);
+      int n1 = sprintf(filenamestr_mom, "./output/mom_%08d.dat",  filenamecount);
 
       // Write file
       writeSol(filenamestr, v_xcen, v_vcen, p_ffNew);
+      writeMoments(filenamestr_mom, t_id*dt, v_xcen, v_vcen, ff_1, m_part);
 
       // Update "writing variables"
       filenamecount++;
@@ -379,6 +436,34 @@ void writeSol(const char* filename, vector<double> &x, vector<double> &v,
 
 // ------------------------------------------------------
 
+void writeMoments(const char* filename, double tNow, vector<double> &x, vector<double> &v, 
+                              vector< vector<double> > f, double m_part)
+{
+// Exports the solution into file
+
+  std::ofstream sol_file;
+  sol_file.open(filename);
+
+  sol_file << "# Format: t, x, rho, u, P, q, r" << endl; // write header
+
+  vector<double> mom_vec_prim(5,0.0);
+
+  for(size_t i = 0; i < x.size(); ++i) {
+    compute_VDF_moments(f[i], v, m_part, mom_vec_prim);
+    sol_file << tNow << "   " 
+             << x[i] << "   " 
+             << mom_vec_prim[0] << "   " 
+             << mom_vec_prim[1] << "   " 
+             << mom_vec_prim[2] << "   " 
+             << mom_vec_prim[3] << "   " 
+             << mom_vec_prim[4] << endl;
+  }
+
+  sol_file.close(); 
+}
+
+// ------------------------------------------------------
+
 double limiterFun(double r)
 {
   // return (r + abs(r))/(1 + abs(r)); // van Leer 
@@ -409,7 +494,8 @@ double minmodFun(double v1, double v2, double v3)
 
 // ------------------------------------------------------
 
-void initVDF(const string s_VDFtype, vector< vector<double> > &f)
+void initVDF(const string s_VDFtype, vector< vector<double> > &f,  
+              vector<double> v_xcen, vector<double> v_vcen, double m_part)
 {
 // Initializes the VDF "f" according to constant string "s_VDFtype".
 
@@ -427,6 +513,38 @@ void initVDF(const string s_VDFtype, vector< vector<double> > &f)
       for(size_t j = round(Nv/4); j < round(Nv/2); ++j)
         f[i][j] = 1.0;
  
+  // ======= Riemann problem: left and right Maxwellian states 
+  } else if (s_VDFtype.compare("Riemann")==0) {
+
+    size_t Nx = f.size();
+    size_t Nv = f.at(0).size();
+
+    // Left state
+    double rhoL = 4.0; // [kg/m3]
+    double uL   = 0.0; // [m/s] 
+    double PL   = 400000; // [Pa]
+
+    // Right state
+    double rhoR = 1.0; // [kg/m3]
+    double uR   = 0.0; // [m/s]
+    double PR   = 100000; // [Pa]
+
+    // Compute some variables
+    double nL = rhoL/m_part;
+    double TL = PL/(nL*kB);
+    double nR = rhoR/m_part;
+    double TR = PR/(nR*kB);
+
+    // first half of the domain
+    for(size_t i = 0; i < round(Nx/2); ++i) 
+      for(size_t j = 0; j < Nv; ++j)  // span all velocities
+        f[i][j] = maxwellian_1V(v_vcen[j], nL, uL, TL, m_part);
+
+    // second half of the domain
+    for(size_t i = round(Nx/2); i < Nx; ++i) 
+      for(size_t j = 0; j < Nv; ++j)  // span all velocities
+        f[i][j] = maxwellian_1V(v_vcen[j], nR, uR, TR, m_part);
+
   // ======= Type not recognized 
   } else {
     cerr << "Attention! Distribution type " << s_VDFtype 
@@ -497,4 +615,55 @@ void loadValuesFromFile(const char* filename, const vector<double> &v_xcen, vect
     v[i] = v_tmp[pos_1] + (v_tmp[pos_2]-v_tmp[pos_1])/(x_tmp[pos_2] - x_tmp[pos_1] + 1.0e-20)*(xNow - x_tmp[pos_1]);
 
   }
+}
+
+// ---------------------------------------------------------------------
+
+void   compute_VDF_moments(vector<double> &f, vector<double> v, 
+                           double m_part, vector<double> &mom_vec_prim)
+{
+
+// Computes moments of the distribution function and puts them inside mom_vec_prim,
+// where "prim" stands for "primitive (variables)"
+
+  // f: 1D vector, VDF at a given position
+
+  size_t Nv = f.size();
+
+  double dv = v[2] - v[1]; // Assume grid is uniform and has at least 3 points..
+  double n = 0.0, nu = 0.0, u = 0.0, P = 0.0, q = 0.0, r = 0.0;
+
+  // Compute n and n*u
+  for (size_t j = 0; j < Nv; ++j){
+    n  += f[j]*dv;
+    nu += v[j]*f[j]*dv;
+  }
+
+  u = nu/n;
+
+  // Compute P, q, r (central moments)
+  for(size_t j = 0; j < Nv; ++j){
+    double cj = v[j] - u;
+    P += m_part * cj * cj *           f[j]*dv;
+    q += m_part * cj * cj * cj *      f[j]*dv;
+    r += m_part * cj * cj * cj * cj * f[j]*dv;
+  }
+
+  mom_vec_prim[0] = n;
+  mom_vec_prim[1] = u;
+  mom_vec_prim[2] = P;
+  mom_vec_prim[3] = q;
+  mom_vec_prim[4] = r;
+
+}
+
+// ---------------------------------------------------------------------
+
+double maxwellian_1V(double v, double n, double u, double T, double m_part)
+{
+// Returns the value of a 1D Maxwellian at the velocity "v".
+// The Maxwellian is defined by the number density n, bulk velocity u, temperature T
+// and particle mass m_part.
+
+  return n*sqrt(m_part/(2*PI*kB*T))*exp(-m_part/(2*kB*T)*(v - u)*(v - u));
 }

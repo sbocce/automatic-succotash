@@ -17,8 +17,8 @@ Tr = 500; % [K] (Neutrals) Temperature in radius direction
 Nx = 100;
 Nv = 100;
 
-file_ID = 80;
-filename = sprintf('../output/file_%08d.dat', file_ID);
+file_ID = 0;
+filename = sprintf('../output/VDF_%08d.dat', file_ID);
 dd = load(filename);
 
 xx = dd(:,1);
