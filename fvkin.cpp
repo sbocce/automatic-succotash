@@ -46,7 +46,7 @@ void   initVDF(const string s_VDFtype, vector< vector<double> > &f, vector<doubl
 
 void   writeSol(const char* filename,vector<double> &x,vector<double> &v,vector< vector<double> > *p_ff);
 
-void   writeMoments(const char* filename, double tNow, vector<double> &x, vector<double> &v, vector< vector<double> > f, double m_part);
+void   writeMoments(const char* filename, double tNow, vector<double> &x, vector<double> &v, vector< vector<double> > *p_ff, double m_part);
 
 double limiterFun(double r);
 
@@ -67,23 +67,23 @@ int main()
   // ## SIMULATION PARAMETERS
   //
   // ---  Space and time discretizations
-  double dt = 1.0e-17;
+  double dt = 1.0e-15;
   size_t Nt = 15000;
 
-  double xmin = -2.0e-10;
-  double xmax = 2.0e-10;
-  size_t Nx = 500;
+  double xmin = -2.0e-8;
+  double xmax = 2.0e-8;
+  size_t Nx = 1000;
 
   double vmin = -2000;
   double vmax = 3000;
-  size_t Nv = 500;
+  size_t Nv = 1000;
   
   // --- Numerics
   string reconstruction = "mieussens"; // "none" - "linear" - "mieussens"
 
   // --- Physical quantities and thruster parameters
   // double m_part = 21.8e-26;       // [kg]  - Xe+ mass of the particle 
-  double m_part = 6.67e-26;       // [kg]  - Ar mass of the particle 
+  double m_part = 6.6337e-26;       // [kg]  - Ar mass of the particle 
   double q_part = 0.0;            // [C]   - particle charge
   double vIoniz = 300.0;          // [m/s] - velocity of particles created by ionization
   double sigma_HS = 5.463e-19;    // [m2]  - hard-sphere cross section for argon-argon collisions
@@ -91,7 +91,7 @@ int main()
   string s_VDF_type_init = "Riemann"; // "zero" or "block" or "Riemann"
 
   // --- Solution writing 
-  size_t writeeach = 500;
+  size_t writeeach = 5000;
 
   // --- Enable/disable source terms
   bool electric_field_bool    = 0;
@@ -175,8 +175,6 @@ int main()
   size_t count         = 0;
   size_t filenamecount = 0;
 
-  vector<double> mom_vec_prim(5, 0.0);
-
   for(size_t t_id = 0; t_id < Nt; ++t_id) {
 
     cout << "Solving step: " << t_id << " of " << Nt << endl;
@@ -187,8 +185,9 @@ int main()
       double a = v_a[i]; // local acceleration (external forces)
 
       double ni, ui, Ti, nu_BGK;
+      vector<double> mom_vec_prim(5, 0.0);
       if (BGK_collisions_bool) {
-        compute_VDF_moments(ff_1.at(i), v_vcen, m_part, mom_vec_prim);
+        compute_VDF_moments(p_ff->operator[](i), v_vcen, m_part, mom_vec_prim);
         ni = mom_vec_prim[0];
         ui = mom_vec_prim[1];
         Ti = mom_vec_prim[2]/(ni*kB); // T = P/(n*kB)
@@ -394,8 +393,8 @@ int main()
       int n1 = sprintf(filenamestr_mom, "./output/mom_%08d.dat",  filenamecount);
 
       // Write file
-      writeSol(filenamestr, v_xcen, v_vcen, p_ffNew);
-      writeMoments(filenamestr_mom, t_id*dt, v_xcen, v_vcen, ff_1, m_part);
+      // writeSol(filenamestr, v_xcen, v_vcen, p_ffNew);
+      writeMoments(filenamestr_mom, t_id*dt, v_xcen, v_vcen, p_ffNew, m_part);
 
       // Update "writing variables"
       filenamecount++;
@@ -437,7 +436,7 @@ void writeSol(const char* filename, vector<double> &x, vector<double> &v,
 // ------------------------------------------------------
 
 void writeMoments(const char* filename, double tNow, vector<double> &x, vector<double> &v, 
-                              vector< vector<double> > f, double m_part)
+                              vector< vector<double> > *p_ff, double m_part)
 {
 // Exports the solution into file
 
@@ -449,7 +448,7 @@ void writeMoments(const char* filename, double tNow, vector<double> &x, vector<d
   vector<double> mom_vec_prim(5,0.0);
 
   for(size_t i = 0; i < x.size(); ++i) {
-    compute_VDF_moments(f[i], v, m_part, mom_vec_prim);
+    compute_VDF_moments(p_ff->operator[](i), v, m_part, mom_vec_prim);
     sol_file << tNow << "   " 
              << x[i] << "   " 
              << mom_vec_prim[0] << "   " 
