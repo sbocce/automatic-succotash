@@ -67,16 +67,16 @@ int main()
   // ## SIMULATION PARAMETERS
   //
   // ---  Space and time discretizations
-  double dt = 1.0e-15;
-  size_t Nt = 15000;
+  double dt = 1.0e-8;
+  size_t Nt = 50000;
 
-  double xmin = -2.0e-8;
-  double xmax = 2.0e-8;
-  size_t Nx = 1000;
+  double xmin = 0.0;
+  double xmax = 0.1;
+  size_t Nx = 200;
 
-  double vmin = -2000;
-  double vmax = 3000;
-  size_t Nv = 1000;
+  double vmin = -5000;
+  double vmax = 5000;
+  size_t Nv = 200;
   
   // --- Numerics
   string reconstruction = "mieussens"; // "none" - "linear" - "mieussens"
@@ -84,19 +84,20 @@ int main()
   // --- Physical quantities and thruster parameters
   // double m_part = 21.8e-26;       // [kg]  - Xe+ mass of the particle 
   double m_part = 6.6337e-26;       // [kg]  - Ar mass of the particle 
-  double q_part = 0.0;            // [C]   - particle charge
-  double vIoniz = 300.0;          // [m/s] - velocity of particles created by ionization
-  double sigma_HS = 5.463e-19;    // [m2]  - hard-sphere cross section for argon-argon collisions
+  double q_part = 1.602e-19;      // [C]   - particle charge
+  double vIoniz =   0.0;          // [m/s] - velocity of particles created by ionization
+  // double sigma_HS = 5.463e-19;    // [m2]  - hard-sphere cross section for argon-argon collisions
+  double sigma_HS = 0.0;          // [m2]  - hard-sphere cross section 
 
-  string s_VDF_type_init = "Riemann"; // "zero" or "block" or "Riemann"
+  string s_VDF_type_init = "uniform"; // "zero" or "uniform" or "block" or "Riemann"
 
   // --- Solution writing 
-  size_t writeeach = 5000;
+  size_t writeeach = 1000;
 
   // --- Enable/disable source terms
-  bool electric_field_bool    = 0;
-  bool ionization_source_bool = 0;
-  bool BGK_collisions_bool    = 1;
+  bool electric_field_bool    = 1;
+  bool ionization_source_bool = 1;
+  bool BGK_collisions_bool    = 0;
 
   // ##################################
 
@@ -147,26 +148,41 @@ int main()
   vector<double> v_a(Nx, 0.); // acceleration due to external electric field
 
   if (electric_field_bool) {
-    loadValuesFromFile("data/Edata.dat",v_xcen,E_ext);
 
+    // ### Create electric field from function
     for(size_t i = 0; i < Nx; ++i) {
-      v_a[i] = q_part*E_ext[i]/m_part;
+
+      //double E_i = 2000.0*sin(2513.27412287*v_xcen[i]); // steady sin
+
+      double LD = 0.1/10.0; // [m]
+      double phi0 = 5;      // [V]
+      double xi = v_xcen[i]; // [m]
+      double E_i = -phi0/LD*(exp(-xi/LD) - exp((xi-0.1)/LD));
+
+      v_a[i]     = q_part/m_part*E_i;
     }
+
+    // ### Load electric field from file
+    // loadValuesFromFile("data/Edata.dat",v_xcen,E_ext);
+
+    // for(size_t i = 0; i < Nx; ++i) {
+    //   v_a[i] = q_part*E_ext[i]/m_part;
+    // }
   }
 
   // --- Ionization source, happens at the velocity of neutrals
-  vector<double> SS(Nx, 0.); // source terms
+  vector<double> SS(Nx, 5.0e14); // source terms
   int ionizPosVel;
 
   if (ionization_source_bool) {
-    loadValuesFromFile("data/Sdata.dat",v_xcen,SS);
+   // loadValuesFromFile("data/Sdata.dat",v_xcen,SS);
 
-    double DeltaVioniz = vIoniz - vmin;
-    ionizPosVel = floor(DeltaVioniz/dv);
+   double DeltaVioniz = vIoniz - vmin;
+   ionizPosVel = floor(DeltaVioniz/dv);
 
-    if(ionizPosVel < 0) {
-      cerr << "Attention! Ionization source out of velocity domain!" << endl;
-    }
+   // if(ionizPosVel < 0) {
+   //   cerr << "Attention! Ionization source out of velocity domain!" << endl;
+   // }
   }
 
   // ============================
@@ -393,7 +409,7 @@ int main()
       int n1 = sprintf(filenamestr_mom, "./output/mom_%08d.dat",  filenamecount);
 
       // Write file
-      // writeSol(filenamestr, v_xcen, v_vcen, p_ffNew);
+      writeSol(filenamestr, v_xcen, v_vcen, p_ffNew);
       writeMoments(filenamestr_mom, t_id*dt, v_xcen, v_vcen, p_ffNew, m_part);
 
       // Update "writing variables"
@@ -501,6 +517,16 @@ void initVDF(const string s_VDFtype, vector< vector<double> > &f,
   // ======= Initialize all elements to zero
   if(s_VDFtype.compare("zero")==0) { // Do nothing
   
+  // ======= Uniform, all elements equal to 1
+  } else if (s_VDFtype.compare("uniform")==0) {
+
+    size_t Nx = f.size();
+    size_t Nv = f.at(0).size();
+
+    for(size_t i = 0; i < Nx; ++i) 
+      for(size_t j = 0; j < Nv; ++j)
+        f[i][j] = 1.0;
+
   // ======= Square block of elements to 1, all others to 0
   } else if (s_VDFtype.compare("block")==0) {
 

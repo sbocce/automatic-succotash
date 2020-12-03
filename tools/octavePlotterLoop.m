@@ -7,12 +7,12 @@ page_screen_output(0);
 % This script plots a VDF given as a series of X, Y and Z points.
 
 % Set parameters (find them on the heading)
-Nx = 100;
-Nv = 100;
+Nx = 200;
+Nv = 200;
 
 figure
-for kk = 0:1:29
-%for kk = 0:2
+% for kk = 0:1:9
+for kk = 0:9
 
   fprintf('Step %d\n', kk);
 
@@ -29,7 +29,7 @@ for kk = 0:1:29
   FF = reshape(ff, Nv, Nx)';
   
   % PLOT data
-  surf(XX, VV, FF)
+  surf(XX, VV, log10(FF))
   shading flat
   xlabel('x [m]')
   ylabel('v [m/s]')
@@ -44,6 +44,14 @@ for kk = 0:1:29
   end
 
 end
+
+figure
+contourf(XX, VV, log10(FF))
+colorbar
+
+
+
+return
 
 % PLOT VDF LINE BY LINE
 stepp = 5;
