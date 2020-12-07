@@ -10,7 +10,7 @@ page_screen_output(0);
 files_list = dir('../output/mom_*');
 
 figure
-for ii = 1:1:numel(files_list)
+for ii = 1:2:numel(files_list)
 
   % Load file
   dd = load(['../output/',files_list(ii).name]);

@@ -68,18 +68,19 @@ int main()
   //
   // ---  Space and time discretizations
   double dt = 1.0e-8;
-  size_t Nt = 50000;
+  size_t Nt = 500;
+  // size_t Nt = 50000;
 
   double xmin = 0.0;
   double xmax = 0.1;
-  size_t Nx = 200;
+  size_t Nx = 1000;
 
   double vmin = -5000;
   double vmax = 5000;
-  size_t Nv = 200;
+  size_t Nv = 1000;
   
   // --- Numerics
-  string reconstruction = "mieussens"; // "none" - "linear" - "mieussens"
+  int reconstruction = 0; // 0: none - 1: linear - 2: mieussens
 
   // --- Physical quantities and thruster parameters
   // double m_part = 21.8e-26;       // [kg]  - Xe+ mass of the particle 
@@ -98,6 +99,10 @@ int main()
   bool electric_field_bool    = 1;
   bool ionization_source_bool = 1;
   bool BGK_collisions_bool    = 0;
+
+  // --- BCs
+  bool bool_x_periodic = 1;
+  bool bool_v_periodic = 0;
 
   // ##################################
 
@@ -171,7 +176,7 @@ int main()
   }
 
   // --- Ionization source, happens at the velocity of neutrals
-  vector<double> SS(Nx, 5.0e14); // source terms
+  vector<double> SS(Nx, 5.0e20); // source terms
   int ionizPosVel;
 
   if (ionization_source_bool) {
@@ -193,7 +198,7 @@ int main()
 
   for(size_t t_id = 0; t_id < Nt; ++t_id) {
 
-    cout << "Solving step: " << t_id << " of " << Nt << endl;
+    // cout << "Solving step: " << t_id << " of " << Nt << endl;
 
     #pragma omp parallel for
     for(size_t i = 1; i < Nx-1; ++i) { // BOUNDARIEEEESSSSSSS EXCLUDEEEDDD
@@ -232,7 +237,7 @@ int main()
         // state values. Interfaces along the velocity axis are vplus and vminus.
         // ...and compute numerical fluxes
 
-        if(reconstruction.compare("none") == 0) { // No reconstruction at interface
+        if(reconstruction == 0) { // No reconstruction at interface
 
           fL_xplus  = p_ff->operator[](i)[j];
           fR_xplus  = p_ff->operator[](i+1)[j];
@@ -253,7 +258,7 @@ int main()
           Fv_minus = 0.5*(a*fL_vminus + a*fR_vminus - abs(a)*(fR_vminus - fL_vminus));
 
         // =====  Linear reconstruction  =====
-        } else if(reconstruction.compare("linear") == 0) {
+        } else if(reconstruction == 1) {
 
           // Near the borders go with a first order method (no reconstruction)
           if( (i <= 1) || (i >= Nx-2) || (j <= 1) || (j >= Nv-2) ) {
@@ -319,7 +324,7 @@ int main()
           Fv_minus = 0.5*(a*fL_vminus + a*fR_vminus - abs(a)*(fR_vminus - fL_vminus));
 
         // =====  Mieussens-style minmod  =====
-        } else if(reconstruction.compare("mieussens") == 0) { // Linear reconstruction
+        } else if(reconstruction == 2) {
 
           fL_xplus  = p_ff->operator[](i)[j];
           fR_xplus  = p_ff->operator[](i+1)[j];
@@ -397,6 +402,24 @@ int main()
                                     + dt*BGK_Src; 
       }
     }
+
+    // ------ Set BCs
+
+    if (bool_x_periodic) { // IS x PERIODIC?
+      for(size_t j = 0; j < Nv; ++j) { 
+        p_ffNew->operator[](0)[j]    = p_ffNew->operator[](Nx-2)[j];
+        p_ffNew->operator[](Nx-1)[j] = p_ffNew->operator[](1)[j];
+      }
+    }
+
+    if (bool_v_periodic) { // IS v PERIODIC?
+      for(size_t i = 0; i < Nx; ++i) { 
+        p_ffNew->operator[](i)[0]    = p_ffNew->operator[](i)[Nv-2];
+        p_ffNew->operator[](i)[Nv-1] = p_ffNew->operator[](i)[1];
+      }
+    }
+
+
 
     // ------ Write solution to file
     count++;

@@ -7,8 +7,8 @@ page_screen_output(0);
 % This script plots a VDF given as a series of X, Y and Z points.
 
 % Set parameters (find them on the heading)
-Nx = 200;
-Nv = 200;
+Nx = 1000;
+Nv = 1000;
 
 figure
 % for kk = 0:1:9
